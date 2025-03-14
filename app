@@ -11,7 +11,12 @@ SARVAM_API_KEY = "326bc7a1-07e7-4b99-8b74-0f70369e8a73"
 # In-memory user data storage
 user_data = {}
 
-# Translation Function
+# ======================= Homepage Route to Fix 404 Error =======================
+@app.route("/")
+def home():
+    return "Welcome to the Loan Advisor Bot! Use WhatsApp to chat with the bot."
+
+# ======================= Translation Function =======================
 def translate_text(text, target_lang="hi"):
     url = "https://api.sarvam.ai/translate"
     headers = {"Authorization": f"Bearer {SARVAM_API_KEY}"}
@@ -20,7 +25,7 @@ def translate_text(text, target_lang="hi"):
     response = requests.post(url, json=data, headers=headers)
     return response.json().get("translated_text", text)
 
-# Main WhatsApp Bot Route
+# ======================= Main WhatsApp Bot Route =======================
 @app.route("/whatsapp", methods=["POST"])
 def whatsapp():
     user_phone = request.form.get("From")
@@ -68,13 +73,13 @@ def whatsapp():
 
     return str(resp)
 
-# EMI Calculator
+# ======================= EMI Calculator Function =======================
 def calculate_emi(principal, rate, tenure):
     rate = rate / (12 * 100)  # Monthly interest rate
     emi = (principal * rate * ((1 + rate) ** tenure)) / (((1 + rate) ** tenure) - 1)
     return round(emi, 2)
 
-# Port Binding for Render Deployment
+# ======================= Port Binding for Render Deployment =======================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))  # Port from Render or default 5000
     app.run(host="0.0.0.0", port=port, debug=True)
