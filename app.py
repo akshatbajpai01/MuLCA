@@ -12,7 +12,7 @@ with open("mulca-453508-413ed3cd3277.json", "w") as key_file:
 
 
 # Google Cloud Translation Setup
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "E:\\key\\mulca-453508-413ed3cd3277.json"
+os.environ["mulca-55@mulca-453508.iam.gserviceaccount.com"] = "E:\\key\\mulca-453508-413ed3cd3277.json"
 translate_client = translate.Client()
 
 # Translation Function
