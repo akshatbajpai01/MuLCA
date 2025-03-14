@@ -1,13 +1,14 @@
+import os
 import requests
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 
 app = Flask(__name__)
 
-# Sarvam API Key for Translation
+# Sarvam API Key for translation
 SARVAM_API_KEY = "326bc7a1-07e7-4b99-8b74-0f70369e8a73"
 
-# User Data for Loan Eligibility Tracking
+# In-memory user data storage
 user_data = {}
 
 # Translation Function
@@ -19,24 +20,17 @@ def translate_text(text, target_lang="hi"):
     response = requests.post(url, json=data, headers=headers)
     return response.json().get("translated_text", text)
 
-# EMI Calculator Function
-def calculate_emi(principal, rate, tenure):
-    rate = rate / (12 * 100)  # Monthly interest rate
-    emi = (principal * rate * ((1 + rate) ** tenure)) / (((1 + rate) ** tenure) - 1)
-    return round(emi, 2)
-
+# Main WhatsApp Bot Route
 @app.route("/whatsapp", methods=["POST"])
 def whatsapp():
     user_phone = request.form.get("From")
     user_message = request.form.get("Body")
 
-    resp = MessagingResponse()
-
-    # Multilingual Support (Default to Hindi)
-    user_lang = "hi"  # Default language
+    # Translation (Auto-detect to English, then respond in user's language)
+    user_lang = "hi"  # Default to Hindi (can add auto-detection if required)
     translated_input = translate_text(user_message, "en")
 
-    # Loan Eligibility Flow
+    # Conversation Logic
     if user_phone not in user_data:
         user_data[user_phone] = {"stage": "employment"}
         response_text = "Are you salaried or self-employed?"
@@ -45,27 +39,42 @@ def whatsapp():
         user_data[user_phone]["stage"] = "income"
         response_text = "What is your monthly income?"
     elif user_data[user_phone]["stage"] == "income":
-        user_data[user_phone]["income"] = int(translated_input)
-        user_data[user_phone]["stage"] = "credit"
-        response_text = "What is your credit score?"
+        try:
+            user_data[user_phone]["income"] = int(translated_input)
+            user_data[user_phone]["stage"] = "credit"
+            response_text = "What is your credit score?"
+        except ValueError:
+            response_text = "Please provide a valid income amount."
     elif user_data[user_phone]["stage"] == "credit":
-        user_data[user_phone]["credit_score"] = int(translated_input)
-        income = user_data[user_phone]["income"]
-        credit_score = user_data[user_phone]["credit_score"]
+        try:
+            user_data[user_phone]["credit_score"] = int(translated_input)
+            income = user_data[user_phone]["income"]
+            credit_score = user_data[user_phone]["credit_score"]
 
-        if income > 20000 and credit_score > 700:
-            response_text = "You are eligible for a loan!"
-        else:
-            response_text = "Sorry, you may not be eligible."
+            # Loan Eligibility Logic
+            if income > 20000 and credit_score > 700:
+                response_text = "You are eligible for a loan!"
+            else:
+                response_text = "Sorry, you may not be eligible."
+        except ValueError:
+            response_text = "Please provide a valid credit score."
 
-    # Interactive Button Example (Optional)
-    resp.message(response_text).media("https://twilio.com/interactive-buttons")
-
-    # Translate Response Back to User's Language
+    # Translate response back to user's language
     translated_response = translate_text(response_text, user_lang)
 
+    # Send Response
+    resp = MessagingResponse()
     resp.message(translated_response)
+
     return str(resp)
 
+# EMI Calculator
+def calculate_emi(principal, rate, tenure):
+    rate = rate / (12 * 100)  # Monthly interest rate
+    emi = (principal * rate * ((1 + rate) ** tenure)) / (((1 + rate) ** tenure) - 1)
+    return round(emi, 2)
+
+# Port Binding for Render Deployment
 if __name__ == "__main__":
-    app.run(port=5000, debug=True)
+    port = int(os.environ.get("PORT", 5000))  # Port from Render or default 5000
+    app.run(host="0.0.0.0", port=port, debug=True)
