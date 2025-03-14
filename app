@@ -10,14 +10,23 @@ SARVAM_API_KEY = "326bc7a1-07e7-4b99-8b74-0f70369e8a73"
 # Dummy user data for conversation flow
 user_data = {}
 
+# Root Route for Testing
+@app.route("/", methods=["GET"])
+def home():
+    return "🚀 WhatsApp Loan Advisor Bot is Live!"
+
 # Translation Function using Sarvam AI
 def translate_text(text, target_lang="en"):
     url = "https://api.sarvam.ai/translate"
     headers = {"Authorization": f"Bearer {SARVAM_API_KEY}"}
     data = {"text": text, "target_lang": target_lang}
 
-    response = requests.post(url, json=data, headers=headers)
-    return response.json().get("translated_text", text)
+    try:
+        response = requests.post(url, json=data, headers=headers)
+        response.raise_for_status()  # Raise error if request fails
+        return response.json().get("translated_text", text)
+    except Exception as e:
+        return f"Translation error: {str(e)}"
 
 # Language Detection Function
 def detect_language(text):
@@ -25,8 +34,12 @@ def detect_language(text):
     headers = {"Authorization": f"Bearer {SARVAM_API_KEY}"}
     data = {"text": text}
 
-    response = requests.post(url, json=data, headers=headers)
-    return response.json().get("detected_language", "en")
+    try:
+        response = requests.post(url, json=data, headers=headers)
+        response.raise_for_status()
+        return response.json().get("detected_language", "en")
+    except Exception as e:
+        return "en"
 
 @app.route("/whatsapp", methods=["POST"])
 def whatsapp():
