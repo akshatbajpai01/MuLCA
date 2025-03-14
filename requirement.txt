@@ -1,0 +1,6 @@
+flask
+twilio
+requests
+googletrans
+speechrecognition
+pyttsx3
