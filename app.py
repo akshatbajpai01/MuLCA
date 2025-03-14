@@ -7,7 +7,7 @@ import os
 app = Flask(__name__)
 
 # Google Cloud Translation Setup
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/etc/secrets/my-project-key.json"
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "E:\\key\\mulca-453508-413ed3cd3277.json"
 translate_client = translate.Client()
 
 # Translation Function
