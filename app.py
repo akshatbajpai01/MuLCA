@@ -8,7 +8,7 @@ app = Flask(__name__)
 
 # Write the JSON key file from the environment variable
 with open("mulca-453508-413ed3cd3277.json", "w") as key_file:
-    key_file.write(os.environ["GOOGLE_CREDENTIALS"])
+    key_file.write(os.environ["GOOGLE_APPLICATION_CREDENTIALS"])
 
 
 # Google Cloud Translation Setup
