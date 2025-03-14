@@ -1,47 +1,39 @@
+import os
 import requests
-from google.cloud import translate_v2 as translate
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
-import os
+from google.cloud import translate_v2 as translate
 
-app = Flask(__name__)
-
-# Google Cloud Translation Setup
+# Create a temporary JSON file from the environment variable on Render
+with open("key.json", "w") as key_file:
+    key_file.write(os.environ["GOOGLE_APPLICATION_CREDENTIALS"])
+# Load the JSON key file
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "E:\\key\\mulca-453508-413ed3cd3277.json"
+
+# Initialize Google Translate Client
 translate_client = translate.Client()
 
-# Translation Function
 def translate_text(text, target_lang="en"):
     try:
         result = translate_client.translate(text, target_language=target_lang)
         return result['translatedText']
     except Exception as e:
-        return f"Translation error: {str(e)}"
+        print(f"❌ Translation Error: {str(e)}")
+        return "Error in translation. Please try again."
 
-# Language Detection Function
-def detect_language(text):
-    try:
-        result = translate_client.detect_language(text)
-        return result['language']
-    except Exception as e:
-        return "en"
+app = Flask(__name__)
 
-@app.route("/", methods=["GET"])
-def home():
-    return "🚀 WhatsApp Loan Advisor Bot is Live!"
+# Dictionary to track user conversations
+user_data = {}
 
 @app.route("/whatsapp", methods=["POST"])
 def whatsapp():
     user_phone = request.form.get("From")
     user_message = request.form.get("Body")
 
-    # Detect user's language
-    user_lang = detect_language(user_message)
-
-    # Translate user input to English for internal processing
+    # Translate user input to English for easier processing
     translated_input = translate_text(user_message, "en")
 
-    # Conversation flow logic
     if user_phone not in user_data:
         user_data[user_phone] = {"stage": "employment"}
         response_text = "Are you salaried or self-employed?"
@@ -65,16 +57,13 @@ def whatsapp():
         else:
             response_text = "Sorry, you may not be eligible."
 
-    # Translate response back to user's language
-    translated_response = translate_text(response_text, user_lang)
+    # Translate the bot's response back to the user's language
+    translated_response = translate_text(response_text, "hi")  # Change 'hi' to user’s language if needed
 
-    # Send response
     resp = MessagingResponse()
     resp.message(translated_response)
 
     return str(resp)
 
-# Flask app runs on port 5000 or Render-assigned port
 if __name__ == "__main__":
-    import os
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)
