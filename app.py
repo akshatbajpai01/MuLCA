@@ -7,6 +7,7 @@ import os
 import traceback
 import math  # For EMI calculation
 from langdetect import detect  # Language detection for multilingual support
+from googletrans import Translator  # Google Translate integration
 
 app = Flask(__name__)
 CORS(app)
@@ -19,9 +20,6 @@ TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
 TWILIO_WHATSAPP_NUMBER = os.environ.get("TWILIO_WHATSAPP_NUMBER")
 
 # API URLs
-SARVAM_TRANSLATE_URL = "https://api.sarvam.ai/translate"
-SARVAM_STT_URL = "https://api.sarvam.ai/speech-to-text"
-SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech"
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 
 # Debugging Function
@@ -32,12 +30,17 @@ def log_debug_info(stage, data=None, error=None):
     if error:
         print(f"❌ Error: {error}")
 
-# Language Detection
-def detect_language(text):
+# Google Translate Function
+translator = Translator()
+
+def translate_text(text, target_lang="en"):
     try:
-        return detect(text)  # Detects language like 'en', 'hi', 'es', etc.
-    except Exception:
-        return "en"  # Default to English if detection fails
+        translated_text = translator.translate(text, dest=target_lang).text
+        log_debug_info("Google Translate Success", {"Original": text, "Translated": translated_text, "Target": target_lang})
+        return translated_text
+    except Exception as e:
+        log_debug_info("Google Translate Failure", error=str(e))
+        return text
 
 # EMI Calculation Function
 def calculate_emi(principal, rate, tenure):
@@ -87,30 +90,12 @@ def handle_loan_queries(message):
 
     return None
 
-# Translation Function
-def translate_text(text, target_lang="hi"):
-    if not SARVAM_API_KEY:
-        log_debug_info("SARVAM API Key Missing")
-        return text
-
-    headers = {"Authorization": f"Bearer {SARVAM_API_KEY}"}
-    data = {"text": text, "target_lang": target_lang}
-
-    try:
-        response = requests.post(SARVAM_TRANSLATE_URL, json=data, headers=headers)
-        response.raise_for_status()
-        log_debug_info("Translation API Success", response.json())
-        return response.json().get("translated_text", text)
-    except requests.exceptions.RequestException as e:
-        log_debug_info("Translation API Failure", error=str(e))
-        return text
-
 # OpenAI Response
 def get_openai_response(user_message):
-    user_language = detect_language(user_message)
+    user_language = detect(user_message)  # Detect language
     translated_input = translate_text(user_message, target_lang="en")
-    loan_response = handle_loan_queries(translated_input)
 
+    loan_response = handle_loan_queries(translated_input)
     if loan_response:
         return translate_text(loan_response, target_lang=user_language)
 
@@ -129,30 +114,11 @@ def get_openai_response(user_message):
     try:
         response = requests.post(OPENAI_API_URL, json=data, headers=headers, timeout=20)
         response.raise_for_status()
-        log_debug_info("OpenAI API Success", response.json())
         openai_response = response.json()["choices"][0]["message"]["content"]
         return translate_text(openai_response, target_lang=user_language)
     except requests.exceptions.RequestException as e:
         log_debug_info("OpenAI API Failure", error=str(e))
         return "❌ Service unavailable."
-
-# Text-to-Speech (TTS)
-def text_to_speech(text, language="en"):
-    if not SARVAM_API_KEY:
-        log_debug_info("SARVAM API Key Missing")
-        return ""
-
-    headers = {"Authorization": f"Bearer {SARVAM_API_KEY}"}
-    data = {"text": text, "language": language}
-
-    try:
-        response = requests.post(SARVAM_TTS_URL, json=data, headers=headers)
-        response.raise_for_status()
-        log_debug_info("Text-to-Speech Success", response.json())
-        return response.json().get("audio_url", "")
-    except requests.exceptions.RequestException as e:
-        log_debug_info("Text-to-Speech Failure", error=str(e))
-        return ""
 
 @app.route("/", methods=["GET"])
 def home():
@@ -167,7 +133,7 @@ def whatsapp_reply():
         log_debug_info("Incoming Message", {"Sender": sender, "Message": incoming_msg})
 
         response_msg = get_openai_response(incoming_msg)
-        translated_msg = translate_text(response_msg, target_lang=detect_language(incoming_msg))
+        translated_msg = translate_text(response_msg, target_lang=detect(incoming_msg))
 
         resp = MessagingResponse()
         resp.message(translated_msg)
