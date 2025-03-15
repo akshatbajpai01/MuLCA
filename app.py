@@ -9,11 +9,11 @@ app = Flask(__name__)
 
 # Sarvam AI API endpoint and key
 SARVAM_API_URL = "https://api.sarvam.ai/v1/chat"
-SARVAM_API_KEY = "your_sarvam_api_key"
+SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY", "your_sarvam_api_key")
 
 # Twilio credentials
-TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
-TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "your_twilio_account_sid")
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "your_twilio_auth_token")
 
 
 # Root route
@@ -121,4 +121,4 @@ def webhook():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)
