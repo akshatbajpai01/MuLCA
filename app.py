@@ -11,6 +11,10 @@ app = Flask(__name__)
 SARVAM_API_URL = "https://api.sarvam.ai/v1/chat"
 SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY", "your_sarvam_api_key")
 
+# DeepSeek API endpoint and key
+DEEPSEEK_API_URL = "https://api.deepseek.ai/v1/chat"
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "your_deepseek_api_key")
+
 # Twilio credentials
 TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "your_twilio_account_sid")
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "your_twilio_auth_token")
@@ -91,6 +95,23 @@ def get_loan_advice(user_input, language):
     return response.json().get("response", "Sorry, I couldn't process your request.")
 
 
+# Function to get response from DeepSeek API
+def get_deepseek_response(user_input, language):
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "query": user_input,
+        "language": language
+    }
+    response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data)
+    if response.status_code == 200:
+        return response.json().get("response", "Sorry, I couldn't process your request.")
+    else:
+        return "Sorry, I couldn't process your request."
+
+
 # Twilio webhook for WhatsApp
 @app.route("/webhook", methods=['POST'])
 def webhook():
@@ -100,18 +121,23 @@ def webhook():
     # Translate input to English for processing
     translated_input = translate_text(incoming_message, 'en')
 
-    # Get loan advice from Sarvam AI
-    loan_advice = get_loan_advice(translated_input, 'en')
+    # Decide which API to use based on the user's input
+    if "loan" in translated_input.lower():
+        # Get loan advice from Sarvam AI
+        response_text = get_loan_advice(translated_input, 'en')
+    else:
+        # Get general response from DeepSeek API
+        response_text = get_deepseek_response(translated_input, 'en')
 
-    # Translate the advice back to the user's language
-    translated_advice = translate_text(loan_advice, user_language)
+    # Translate the response back to the user's language
+    translated_response = translate_text(response_text, user_language)
 
     # Generate text-to-speech response
-    speech_file = text_to_speech(translated_advice, user_language)
+    speech_file = text_to_speech(translated_response, user_language)
 
     # Respond back to the user
     response = MessagingResponse()
-    response.message(translated_advice)
+    response.message(translated_response)
 
     # If the user wants to talk, send the audio file
     if "call" in incoming_message.lower():
