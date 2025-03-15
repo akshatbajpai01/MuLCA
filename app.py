@@ -1,9 +1,11 @@
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 from gtts import gTTS
+from gtts.tts import gTTSError
 import speech_recognition as sr
 import os
 import requests
+import time
 
 app = Flask(__name__)
 
@@ -62,9 +64,13 @@ def translate_text(text, target_language):
 
 # Function to generate text-to-speech
 def text_to_speech(text, language):
-    tts = gTTS(text=text, lang=language)
-    tts.save("response.mp3")
-    return "response.mp3"
+    try:
+        tts = gTTS(text=text, lang=language)
+        tts.save("response.mp3")
+        return "response.mp3"
+    except gTTSError as e:
+        print(f"Error generating TTS: {e}")
+        return None
 
 
 # Function to convert speech-to-text
@@ -105,10 +111,14 @@ def get_deepseek_response(user_input, language):
         "query": user_input,
         "language": language
     }
-    response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data)
-    if response.status_code == 200:
-        return response.json().get("response", "Sorry, I couldn't process your request.")
-    else:
+    try:
+        response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data)
+        if response.status_code == 200:
+            return response.json().get("response", "Sorry, I couldn't process your request.")
+        else:
+            return "Sorry, I couldn't process your request."
+    except requests.exceptions.RequestException as e:
+        print(f"Error calling DeepSeek API: {e}")
         return "Sorry, I couldn't process your request."
 
 
@@ -140,7 +150,7 @@ def webhook():
     response.message(translated_response)
 
     # If the user wants to talk, send the audio file
-    if "call" in incoming_message.lower():
+    if "call" in incoming_message.lower() and speech_file:
         response.message().media(speech_file)
 
     return str(response)
