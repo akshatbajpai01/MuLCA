@@ -46,9 +46,7 @@ def get_gemini_response(user_message):
     if not GOOGLE_API_KEY or not model:
         return ["Sorry, the service is currently unavailable."]
     try:
-        response = model.generate_content(
-            f"You are a financial expert providing guidance on loans, banking, investments, and financial management.\n\nUser Query: {user_message}"
-        )
+        response = model.generate_content(f"You are a financial expert providing guidance on loans, banking, investments, and financial management.\n\nUser Query: {user_message}")
         if not response:
             return ["Sorry, I couldn't process your request."]
 
