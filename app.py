@@ -8,6 +8,7 @@ import traceback
 import math  # For EMI calculation
 from langdetect import detect  # Language detection for multilingual support
 from googletrans import Translator  # Google Translate integration
+import google.generativeai as genai  # Google Gemini Integration
 
 app = Flask(__name__)
 CORS(app)
@@ -15,9 +16,15 @@ CORS(app)
 # Environment Variables
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
 TWILIO_WHATSAPP_NUMBER = os.environ.get("TWILIO_WHATSAPP_NUMBER")
+
+# Initialize Gemini API
+genai.configure(api_key=GEMINI_API_KEY)
+
+gemini_model = genai.GenerativeModel("gemini-pro")
 
 # API URLs
 SARVAM_TRANSLATE_URL = "https://api.sarvam.ai/translate"
@@ -44,6 +51,17 @@ def translate_text(text, target_lang="en"):
     except Exception as e:
         log_debug_info("Google Translate Failure", error=str(e))
         return text
+
+# Gemini Response Function
+def get_gemini_response(prompt, target_lang="en"):
+    try:
+        response = gemini_model.generate_content(prompt)
+        translated_response = translate_text(response.text, target_lang=target_lang)
+        log_debug_info("Gemini Response Success", {"Prompt": prompt, "Response": translated_response})
+        return translated_response
+    except Exception as e:
+        log_debug_info("Gemini Response Failure", error=str(e))
+        return "❌ Service unavailable."
 
 # EMI Calculation Function
 def calculate_emi(principal, rate, tenure):
@@ -93,36 +111,6 @@ def handle_loan_queries(message):
 
     return None
 
-# OpenAI Response
-def get_openai_response(user_message):
-    user_language = detect(user_message)  # Detect language
-    translated_input = translate_text(user_message, target_lang="en")
-
-    loan_response = handle_loan_queries(translated_input)
-    if loan_response:
-        return translate_text(loan_response, target_lang=user_language)
-
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    data = {
-        "model": "gpt-4o",
-        "messages": [
-            {"role": "system", "content": "You are a financial expert providing guidance on loans, banking, investments, and financial management."},
-            {"role": "user", "content": translated_input}
-        ]
-    }
-
-    try:
-        response = requests.post(OPENAI_API_URL, json=data, headers=headers, timeout=20)
-        response.raise_for_status()
-        openai_response = response.json()["choices"][0]["message"]["content"]
-        return translate_text(openai_response, target_lang=user_language)
-    except requests.exceptions.RequestException as e:
-        log_debug_info("OpenAI API Failure", error=str(e))
-        return "❌ Service unavailable."
-
 @app.route("/", methods=["GET"])
 def home():
     return "✅ Flask server is running!"
@@ -135,13 +123,14 @@ def whatsapp_reply():
 
         log_debug_info("Incoming Message", {"Sender": sender, "Message": incoming_msg})
 
-        response_msg = get_openai_response(incoming_msg)
-        translated_msg = translate_text(response_msg, target_lang=detect(incoming_msg))
+        user_language = detect(incoming_msg)
+        translated_input = translate_text(incoming_msg, target_lang="en")
+        response_msg = get_gemini_response(translated_input, target_lang=user_language)
 
         resp = MessagingResponse()
-        resp.message(translated_msg)
+        resp.message(response_msg)
 
-        log_debug_info("Reply Sent", {"Reply": translated_msg})
+        log_debug_info("Reply Sent", {"Reply": response_msg})
         return str(resp)
 
     except Exception as e:
