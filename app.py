@@ -1,112 +1,132 @@
-import os
-import base64
-import json
-from google.cloud import translate_v2 as translate
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from twilio.twiml.messaging_response import MessagingResponse
+from flask_cors import CORS
+import requests
+import time
+import os
+import traceback
 
-# Initialize Flask app
-app = Flask(__name__)
+app = Flask(__name__)  # Fixed __name__
+CORS(app)
 
-# Initialize user data storage
-user_data = {}
+# Get environment variables properly
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY")
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
+TWILIO_WHATSAPP_NUMBER = os.environ.get("TWILIO_WHATSAPP_NUMBER")
 
-# Load Google Cloud credentials from environment variable
-def load_google_credentials():
+# API Endpoints
+SARVAM_TRANSLATE_URL = "https://api.sarvam.ai/translate"
+SARVAM_STT_URL = "https://api.sarvam.ai/speech-to-text"
+SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech"
+OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
+
+def get_openai_response(user_message):
+    if not OPENAI_API_KEY:
+        return "❌ OpenAI API Key not found."
+
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "model": "gpt-4o",
+        "messages": [
+            {"role": "system", "content": "You are a financial expert providing guidance on loans, banking, investments, and financial management."},
+            {"role": "user", "content": user_message}
+        ]
+    }
+
+    for attempt in range(3):
+        try:
+            response = requests.post(OPENAI_API_URL, json=data, headers=headers, timeout=10)
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"]
+        except requests.exceptions.RequestException:
+            time.sleep(2 ** attempt)
+
+    return "❌ Service unavailable."
+
+def translate_text(text, target_lang="hi"):
+    if not SARVAM_API_KEY:
+        return text
+
+    headers = {"Authorization": f"Bearer {SARVAM_API_KEY}"}
+    data = {"text": text, "target_lang": target_lang}
+
     try:
-        # Get the base64-encoded credentials from the environment variable
-        encoded_creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-        if not encoded_creds:
-            raise ValueError("Google Cloud credentials not found in environment variables.")
+        response = requests.post(SARVAM_TRANSLATE_URL, json=data, headers=headers)
+        response.raise_for_status()
+        return response.json().get("translated_text", text)
+    except requests.exceptions.RequestException:
+        return text
 
-        # Decode the base64 string
-        decoded_creds = base64.b64decode(encoded_creds).decode("utf-8")
+def speech_to_text(audio_url):
+    if not SARVAM_API_KEY:
+        return "❌ Speech-to-text service unavailable."
 
-        # Write the credentials to a temporary file
-        with open("temp_creds.json", "w") as f:
-            f.write(decoded_creds)
+    headers = {"Authorization": f"Bearer {SARVAM_API_KEY}"}
+    data = {"audio_url": audio_url, "language": "auto"}
 
-        # Set the environment variable to point to the temporary file
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "temp_creds.json"
-
-    except Exception as e:
-        print(f"Error loading Google Cloud credentials: {e}")
-        raise
-
-# Load Google Cloud credentials when the app starts
-load_google_credentials()
-
-# Initialize Google Cloud Translation client
-translate_client = translate.Client()
-
-# Translation Function
-def translate_text(text, target_lang="en"):
     try:
-        result = translate_client.translate(text, target_language=target_lang)
-        return result['translatedText']
-    except Exception as e:
-        print(f"Translation error: {str(e)}")  # Log the error
-        return "Translation service is currently unavailable. Please try again later."
+        response = requests.post(SARVAM_STT_URL, json=data, headers=headers)
+        response.raise_for_status()
+        return response.json().get("transcription", "Could not process audio.")
+    except requests.exceptions.RequestException:
+        return "Error processing voice message."
 
-# Language Detection Function
-def detect_language(text):
+def text_to_speech(text, language="en"):
+    if not SARVAM_API_KEY:
+        return ""
+
+    headers = {"Authorization": f"Bearer {SARVAM_API_KEY}"}
+    data = {"text": text, "language": language}
+
     try:
-        result = translate_client.detect_language(text)
-        return result['language']
-    except Exception as e:
-        print(f"Language detection error: {str(e)}")  # Log the error
-        return "en"  # Fallback to English if detection fails
+        response = requests.post(SARVAM_TTS_URL, json=data, headers=headers)
+        response.raise_for_status()
+        return response.json().get("audio_url", "")
+    except requests.exceptions.RequestException:
+        return ""
 
-# Home Route
 @app.route("/", methods=["GET"])
 def home():
-    return "🚀 WhatsApp Loan Advisor Bot is Live!"
+    return "✅ Flask server is running!"
 
-# WhatsApp Webhook Route
 @app.route("/whatsapp", methods=["POST"])
-def whatsapp():
-    user_phone = request.form.get("From")
-    user_message = request.form.get("Body")
+def whatsapp_reply():
+    try:
+        incoming_msg = request.values.get("Body", "").strip()
+        sender = request.values.get("From", "")
+        media_url = request.values.get("MediaUrl0", "")
 
-    # Detect user's language
-    user_lang = detect_language(user_message)
+        print(f"📩 Received message from {sender}: {incoming_msg or 'Voice Note'}")
 
-    # Translate user input to English for internal processing
-    translated_input = translate_text(user_message, "en")
-
-    # Conversation flow logic
-    if user_phone not in user_data:
-        user_data[user_phone] = {"stage": "employment"}
-        response_text = "Are you salaried or self-employed?"
-    elif user_data[user_phone]["stage"] == "employment":
-        user_data[user_phone]["employment"] = translated_input
-        user_data[user_phone]["stage"] = "income"
-        response_text = "What is your monthly income?"
-    elif user_data[user_phone]["stage"] == "income":
-        user_data[user_phone]["income"] = int(translated_input)
-        user_data[user_phone]["stage"] = "credit"
-        response_text = "What is your credit score?"
-    elif user_data[user_phone]["stage"] == "credit":
-        user_data[user_phone]["credit_score"] = int(translated_input)
-        response_text = "Checking loan eligibility..."
-
-        income = user_data[user_phone]["income"]
-        credit_score = user_data[user_phone]["credit_score"]
-
-        if income > 20000 and credit_score > 700:
-            response_text = "You are eligible for a loan!"
+        if media_url:
+            text_message = speech_to_text(media_url)
         else:
-            response_text = "Sorry, you may not be eligible."
+            text_message = incoming_msg
 
-    # Translate response back to user's language
-    translated_response = translate_text(response_text, user_lang)
+        response_msg = get_openai_response(text_message)
+        translated_msg = translate_text(response_msg, target_lang="hi")
 
-    # Send response
-    resp = MessagingResponse()
-    resp.message(translated_response)
+        resp = MessagingResponse()
+        audio_url = text_to_speech(translated_msg)
 
-    return str(resp)
+        if audio_url:
+            msg = resp.message()
+            msg.media(audio_url)
+        else:
+            resp.message(translated_msg)
 
-# Run the Flask app
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
+        print(f"📤 Replying to {sender}: {translated_msg}")
+        return str(resp)
+
+    except Exception as e:
+        print(f"❌ Error: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": "Internal Server Error"}), 500
+
+if __name__ == "__main__":  # Fixed __name__
+    print("🚀 Flask server is running...")
+    app.run(host="0.0.0.0", port=8080, debug=True)
