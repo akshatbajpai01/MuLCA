@@ -20,6 +20,9 @@ TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
 TWILIO_WHATSAPP_NUMBER = os.environ.get("TWILIO_WHATSAPP_NUMBER")
 
 # API URLs
+SARVAM_TRANSLATE_URL = "https://api.sarvam.ai/translate"
+SARVAM_STT_URL = "https://api.sarvam.ai/speech-to-text"
+SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech"
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 
 # Debugging Function
