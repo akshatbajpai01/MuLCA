@@ -36,6 +36,11 @@ if GOOGLE_API_KEY:
 else:
     model = None
 
+# ✅ Root Route to confirm service is live
+@app.route("/", methods=["GET"])
+def home():
+    return "✅ The Financial Chatbot is Live! Use the /whatsapp endpoint for interactions."
+
 # ✅ Function to get financial advice from Gemini AI
 def get_gemini_response(user_message):
     if not GOOGLE_API_KEY or not model:
