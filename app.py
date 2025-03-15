@@ -30,36 +30,39 @@ SARVAM_TRANSLATE_URL = "https://api.sarvam.ai/translate"
 SARVAM_TTS_URL = "https://api.sarvam.ai/tts"
 
 # Configure Google Gemini AI
+model = None
 if GOOGLE_API_KEY:
-    genai.configure(api_key=GOOGLE_API_KEY)
-    model = genai.GenerativeModel('models/gemini-1.5-pro-002')
-else:
-    model = None
+    try:
+        genai.configure(api_key=GOOGLE_API_KEY)
+        model = genai.GenerativeModel('models/gemini-1.5-pro-002')
+        print("✅ Gemini AI model initialized successfully.")
+    except Exception as e:
+        print(f"❌ Model Initialization Error: {e}")
+
 
 # ✅ Root Route to confirm service is live
 @app.route("/", methods=["GET"])
 def home():
     return "✅ The Financial Chatbot is Live! Use the /whatsapp endpoint for interactions."
 
+
 # ✅ Function to get financial advice from Gemini AI
 def get_gemini_response(user_message):
     if not GOOGLE_API_KEY or not model:
-        return ["Sorry, the service is currently unavailable."]
+        return ["Sorry, the AI service is currently unavailable."]
+
     try:
         response = model.generate_content(f"You are a financial expert providing guidance on loans, banking, investments, and financial management.\n\nUser Query: {user_message}")
-        if not response:
-            return ["Sorry, I couldn't process your request."]
 
-        gemini_response = response.text.strip()
-        max_length = 1500
-        if len(gemini_response) > max_length:
-            return [gemini_response[i: i + max_length] for i in range(0, len(gemini_response), max_length)]
+        if response and response.text.strip():
+            return [response.text.strip()]
         else:
-            return [gemini_response]
+            return ["Sorry, I couldn't process your request."]
 
     except Exception as e:
         print(f"❌ Error in Gemini response: {e}")
         return ["Sorry, I couldn't process your request at the moment."]
+
 
 # ✅ Function to translate text using Sarvam AI
 def translate_text(text, target_lang="hi"):
@@ -75,8 +78,10 @@ def translate_text(text, target_lang="hi"):
         print(f"❌ Translation Error: {e}")
         return text
 
+
 # ✅ Function to download and convert Twilio audio to WAV for Google STT
 def download_audio(audio_url, output_path="audio_input.wav"):
+    temp_path = "temp_audio"
     try:
         if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
             print("❌ Twilio credentials missing!")
@@ -85,18 +90,17 @@ def download_audio(audio_url, output_path="audio_input.wav"):
         response = requests.get(audio_url, auth=HTTPBasicAuth(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN), stream=True)
         response.raise_for_status()
 
-        temp_path = "temp_audio"
         with open(temp_path, "wb") as audio_file:
             for chunk in response.iter_content(chunk_size=1024):
                 audio_file.write(chunk)
 
         audio = AudioSegment.from_file(temp_path)
         audio.export(output_path, format="wav")
-        os.remove(temp_path)
         return output_path
-    except Exception as e:
-        print(f"❌ Audio Download Error: {e}")
-        return None
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
 
 # ✅ Function to convert speech to text using Google STT
 def google_speech_to_text(audio_url):
@@ -112,9 +116,14 @@ def google_speech_to_text(audio_url):
         text = recognizer.recognize_google(audio)
         os.remove(wav_path)
         return text
+    except sr.UnknownValueError:
+        return "Sorry, I couldn't understand the audio."
+    except sr.RequestError as e:
+        return f"❌ STT Service Error: {e}"
     except Exception as e:
         print(f"❌ Google STT Error: {e}")
         return "Sorry, I couldn't transcribe the audio."
+
 
 # ✅ WhatsApp Webhook Route
 @app.route("/whatsapp", methods=["POST"])
@@ -149,5 +158,7 @@ def whatsapp_reply():
         print(f"❌ Error: {e}\n{traceback.format_exc()}")
         return jsonify({"error": "Internal Server Error"}), 500
 
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, debug=True)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port, debug=True)
