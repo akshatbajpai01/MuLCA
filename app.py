@@ -1,16 +1,42 @@
-import requests
+import os
+import base64
+import json
 from google.cloud import translate_v2 as translate
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
-import os
 
+# Initialize Flask app
 app = Flask(__name__)
 
 # Initialize user data storage
 user_data = {}
 
-# Google Cloud Translation Setup
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "E:\\key\\mulca-453508-413ed3cd3277.json")
+# Load Google Cloud credentials from environment variable
+def load_google_credentials():
+    try:
+        # Get the base64-encoded credentials from the environment variable
+        encoded_creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+        if not encoded_creds:
+            raise ValueError("Google Cloud credentials not found in environment variables.")
+
+        # Decode the base64 string
+        decoded_creds = base64.b64decode(encoded_creds).decode("utf-8")
+
+        # Write the credentials to a temporary file
+        with open("temp_creds.json", "w") as f:
+            f.write(decoded_creds)
+
+        # Set the environment variable to point to the temporary file
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "temp_creds.json"
+
+    except Exception as e:
+        print(f"Error loading Google Cloud credentials: {e}")
+        raise
+
+# Load Google Cloud credentials when the app starts
+load_google_credentials()
+
+# Initialize Google Cloud Translation client
 translate_client = translate.Client()
 
 # Translation Function
@@ -28,19 +54,22 @@ def detect_language(text):
         result = translate_client.detect_language(text)
         return result['language']
     except Exception as e:
-        return None  # or raise an exception
+        print(f"Language detection error: {str(e)}")  # Log the error
+        return "en"  # Fallback to English if detection fails
 
+# Home Route
 @app.route("/", methods=["GET"])
 def home():
     return "🚀 WhatsApp Loan Advisor Bot is Live!"
 
+# WhatsApp Webhook Route
 @app.route("/whatsapp", methods=["POST"])
 def whatsapp():
     user_phone = request.form.get("From")
     user_message = request.form.get("Body")
 
     # Detect user's language
-    user_lang = detect_language(user_message) or "en"  # Fallback to English if detection fails
+    user_lang = detect_language(user_message)
 
     # Translate user input to English for internal processing
     translated_input = translate_text(user_message, "en")
@@ -78,7 +107,6 @@ def whatsapp():
 
     return str(resp)
 
-# Flask app runs on port 5000 or Render-assigned port
+# Run the Flask app
 if __name__ == "__main__":
-    import os
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)  # Disable debug in production
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
