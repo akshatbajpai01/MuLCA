@@ -6,13 +6,11 @@ import os
 
 app = Flask(__name__)
 
-# Write the JSON key file from the environment variable
-with open("mulca-453508-413ed3cd3277.json", "w") as key_file:
-    key_file.write(os.environ["mulca-55@mulca-453508.iam.gserviceaccount.com"])
-
+# Initialize user data storage
+user_data = {}
 
 # Google Cloud Translation Setup
-os.environ["mulca-55@mulca-453508.iam.gserviceaccount.com"] = "E:\\key\\mulca-453508-413ed3cd3277.json"
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "E:\\key\\mulca-453508-413ed3cd3277.json")
 translate_client = translate.Client()
 
 # Translation Function
@@ -21,7 +19,8 @@ def translate_text(text, target_lang="en"):
         result = translate_client.translate(text, target_language=target_lang)
         return result['translatedText']
     except Exception as e:
-        return f"Translation error: {str(e)}"
+        print(f"Translation error: {str(e)}")  # Log the error
+        return "Translation service is currently unavailable. Please try again later."
 
 # Language Detection Function
 def detect_language(text):
@@ -29,7 +28,7 @@ def detect_language(text):
         result = translate_client.detect_language(text)
         return result['language']
     except Exception as e:
-        return "en"
+        return None  # or raise an exception
 
 @app.route("/", methods=["GET"])
 def home():
@@ -41,7 +40,7 @@ def whatsapp():
     user_message = request.form.get("Body")
 
     # Detect user's language
-    user_lang = detect_language(user_message)
+    user_lang = detect_language(user_message) or "en"  # Fallback to English if detection fails
 
     # Translate user input to English for internal processing
     translated_input = translate_text(user_message, "en")
@@ -82,4 +81,4 @@ def whatsapp():
 # Flask app runs on port 5000 or Render-assigned port
 if __name__ == "__main__":
     import os
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)  # Disable debug in production
