@@ -5,6 +5,7 @@ import requests
 import time
 import os
 import traceback
+import math  # For EMI calculation
 
 app = Flask(__name__)
 CORS(app)
@@ -30,8 +31,61 @@ def log_debug_info(stage, data=None, error=None):
     if error:
         print(f"❌ Error: {error}")
 
+# EMI Calculation Function
+def calculate_emi(principal, rate, tenure):
+    try:
+        monthly_rate = rate / (12 * 100)  # Annual to monthly rate
+        emi = (principal * monthly_rate * (1 + monthly_rate) ** tenure) / \
+              ((1 + monthly_rate) ** tenure - 1)
+        return round(emi, 2)
+    except Exception as e:
+        log_debug_info("EMI Calculation Failure", error=str(e))
+        return "❌ Error calculating EMI."
+
+# Loan-related Response
+def handle_loan_queries(message):
+    if "emi" in message.lower():
+        # Example Format: "EMI 500000 7.5 60"
+        try:
+            _, principal, rate, tenure = message.split()
+            emi = calculate_emi(float(principal), float(rate), int(tenure))
+            return f"📈 EMI for ₹{principal} at {rate}% for {tenure} months is ₹{emi}."
+        except ValueError:
+            return "❌ Incorrect format. Use: 'EMI <Principal> <Rate> <Tenure in months>'"
+
+    elif "loan eligibility" in message.lower():
+        return (
+            "✅ Loan Eligibility Guide:\n"
+            "- Stable income source\n"
+            "- Minimum credit score: 700+\n"
+            "- Debt-to-income ratio below 40%\n"
+            "- Employment stability for 2+ years"
+        )
+
+    elif "interest rate" in message.lower():
+        return (
+            "💰 Typical Loan Interest Rates:\n"
+            "- Home Loan: 6.5% - 8.5%\n"
+            "- Personal Loan: 10% - 18%\n"
+            "- Car Loan: 7% - 12%"
+        )
+
+    elif "repayment options" in message.lower():
+        return (
+            "🔄 Loan Repayment Options:\n"
+            "- EMI-based (Monthly Installments)\n"
+            "- Bullet Payment (Lump Sum)\n"
+            "- Step-up/Step-down EMI Plans"
+        )
+
+    return None  # If no matching query is found
+
 # OpenAI Response
 def get_openai_response(user_message):
+    loan_response = handle_loan_queries(user_message)
+    if loan_response:
+        return loan_response  # Directly handle loan-related queries
+
     if not OPENAI_API_KEY:
         log_debug_info("OpenAI API Key Missing")
         return "❌ OpenAI API Key not found."
@@ -78,42 +132,6 @@ def translate_text(text, target_lang="hi"):
         log_debug_info("Translation API Failure", error=str(e))
         return text
 
-# Speech-to-Text Function
-def speech_to_text(audio_url):
-    if not SARVAM_API_KEY:
-        log_debug_info("SARVAM API Key Missing")
-        return "❌ Speech-to-text service unavailable."
-
-    headers = {"Authorization": f"Bearer {SARVAM_API_KEY}"}
-    data = {"audio_url": audio_url, "language": "auto"}
-
-    try:
-        response = requests.post(SARVAM_STT_URL, json=data, headers=headers)
-        response.raise_for_status()
-        log_debug_info("Speech-to-Text Success", response.json())
-        return response.json().get("transcription", "Could not process audio.")
-    except requests.exceptions.RequestException as e:
-        log_debug_info("Speech-to-Text Failure", error=str(e))
-        return "Error processing voice message."
-
-# Text-to-Speech Function
-def text_to_speech(text, language="en"):
-    if not SARVAM_API_KEY:
-        log_debug_info("SARVAM API Key Missing")
-        return ""
-
-    headers = {"Authorization": f"Bearer {SARVAM_API_KEY}"}
-    data = {"text": text, "language": language}
-
-    try:
-        response = requests.post(SARVAM_TTS_URL, json=data, headers=headers)
-        response.raise_for_status()
-        log_debug_info("Text-to-Speech Success", response.json())
-        return response.json().get("audio_url", "")
-    except requests.exceptions.RequestException as e:
-        log_debug_info("Text-to-Speech Failure", error=str(e))
-        return ""
-
 @app.route("/", methods=["GET"])
 def home():
     return "✅ Flask server is running!"
@@ -123,26 +141,14 @@ def whatsapp_reply():
     try:
         incoming_msg = request.values.get("Body", "").strip()
         sender = request.values.get("From", "")
-        media_url = request.values.get("MediaUrl0", "")
 
         log_debug_info("Incoming Message", {"Sender": sender, "Message": incoming_msg})
 
-        if media_url:
-            text_message = speech_to_text(media_url)
-        else:
-            text_message = incoming_msg
-
-        response_msg = get_openai_response(text_message)
+        response_msg = get_openai_response(incoming_msg)
         translated_msg = translate_text(response_msg, target_lang="hi")
 
         resp = MessagingResponse()
-        audio_url = text_to_speech(translated_msg)
-
-        if audio_url:
-            msg = resp.message()
-            msg.media(audio_url)
-        else:
-            resp.message(translated_msg)
+        resp.message(translated_msg)
 
         log_debug_info("Reply Sent", {"Reply": translated_msg})
         return str(resp)
