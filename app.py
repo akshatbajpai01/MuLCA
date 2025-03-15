@@ -6,6 +6,7 @@ import time
 import os
 import traceback
 import math  # For EMI calculation
+from langdetect import detect  # Language detection for multilingual support
 
 app = Flask(__name__)
 CORS(app)
@@ -31,10 +32,17 @@ def log_debug_info(stage, data=None, error=None):
     if error:
         print(f"❌ Error: {error}")
 
+# Language Detection
+def detect_language(text):
+    try:
+        return detect(text)  # Detects language like 'en', 'hi', 'es', etc.
+    except Exception:
+        return "en"  # Default to English if detection fails
+
 # EMI Calculation Function
 def calculate_emi(principal, rate, tenure):
     try:
-        monthly_rate = rate / (12 * 100)  # Annual to monthly rate
+        monthly_rate = rate / (12 * 100)
         emi = (principal * monthly_rate * (1 + monthly_rate) ** tenure) / \
               ((1 + monthly_rate) ** tenure - 1)
         return round(emi, 2)
@@ -42,10 +50,9 @@ def calculate_emi(principal, rate, tenure):
         log_debug_info("EMI Calculation Failure", error=str(e))
         return "❌ Error calculating EMI."
 
-# Loan-related Response
+# Loan-related Queries
 def handle_loan_queries(message):
     if "emi" in message.lower():
-        # Example Format: "EMI 500000 7.5 60"
         try:
             _, principal, rate, tenure = message.split()
             emi = calculate_emi(float(principal), float(rate), int(tenure))
@@ -78,41 +85,7 @@ def handle_loan_queries(message):
             "- Step-up/Step-down EMI Plans"
         )
 
-    return None  # If no matching query is found
-
-# OpenAI Response
-def get_openai_response(user_message):
-    loan_response = handle_loan_queries(user_message)
-    if loan_response:
-        return loan_response  # Directly handle loan-related queries
-
-    if not OPENAI_API_KEY:
-        log_debug_info("OpenAI API Key Missing")
-        return "❌ OpenAI API Key not found."
-
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    data = {
-        "model": "gpt-4o",
-        "messages": [
-            {"role": "system", "content": "You are a financial expert providing guidance on loans, banking, investments, and financial management."},
-            {"role": "user", "content": user_message}
-        ]
-    }
-
-    for attempt in range(3):
-        try:
-            response = requests.post(OPENAI_API_URL, json=data, headers=headers, timeout=20)
-            response.raise_for_status()
-            log_debug_info("OpenAI API Success", response.json())
-            return response.json()["choices"][0]["message"]["content"]
-        except requests.exceptions.RequestException as e:
-            log_debug_info("OpenAI API Failure", error=str(e))
-            time.sleep(2 ** attempt)
-
-    return "❌ Service unavailable."
+    return None
 
 # Translation Function
 def translate_text(text, target_lang="hi"):
@@ -132,6 +105,55 @@ def translate_text(text, target_lang="hi"):
         log_debug_info("Translation API Failure", error=str(e))
         return text
 
+# OpenAI Response
+def get_openai_response(user_message):
+    user_language = detect_language(user_message)
+    translated_input = translate_text(user_message, target_lang="en")
+    loan_response = handle_loan_queries(translated_input)
+
+    if loan_response:
+        return translate_text(loan_response, target_lang=user_language)
+
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "model": "gpt-4o",
+        "messages": [
+            {"role": "system", "content": "You are a financial expert providing guidance on loans, banking, investments, and financial management."},
+            {"role": "user", "content": translated_input}
+        ]
+    }
+
+    try:
+        response = requests.post(OPENAI_API_URL, json=data, headers=headers, timeout=20)
+        response.raise_for_status()
+        log_debug_info("OpenAI API Success", response.json())
+        openai_response = response.json()["choices"][0]["message"]["content"]
+        return translate_text(openai_response, target_lang=user_language)
+    except requests.exceptions.RequestException as e:
+        log_debug_info("OpenAI API Failure", error=str(e))
+        return "❌ Service unavailable."
+
+# Text-to-Speech (TTS)
+def text_to_speech(text, language="en"):
+    if not SARVAM_API_KEY:
+        log_debug_info("SARVAM API Key Missing")
+        return ""
+
+    headers = {"Authorization": f"Bearer {SARVAM_API_KEY}"}
+    data = {"text": text, "language": language}
+
+    try:
+        response = requests.post(SARVAM_TTS_URL, json=data, headers=headers)
+        response.raise_for_status()
+        log_debug_info("Text-to-Speech Success", response.json())
+        return response.json().get("audio_url", "")
+    except requests.exceptions.RequestException as e:
+        log_debug_info("Text-to-Speech Failure", error=str(e))
+        return ""
+
 @app.route("/", methods=["GET"])
 def home():
     return "✅ Flask server is running!"
@@ -145,7 +167,7 @@ def whatsapp_reply():
         log_debug_info("Incoming Message", {"Sender": sender, "Message": incoming_msg})
 
         response_msg = get_openai_response(incoming_msg)
-        translated_msg = translate_text(response_msg, target_lang="hi")
+        translated_msg = translate_text(response_msg, target_lang=detect_language(incoming_msg))
 
         resp = MessagingResponse()
         resp.message(translated_msg)
