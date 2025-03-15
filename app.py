@@ -43,6 +43,15 @@ def handle_loan_queries(message):
         return "✅ Eligibility: Stable income, credit score 700+, and low debt ratio."
     elif "repayment options" in message.lower():
         return "🔄 Repayment options: EMI, Lump Sum, Step-up/Step-down plans."
+    elif "hello" in message.lower() or "hi" in message.lower():
+        return "👋 Hello! Welcome to Loan Advisor Bot. How can I assist you today?"
+    elif "loan advice" in message.lower():
+        return (
+            "💡 Loan Advisory Tips:"
+            "- Always compare interest rates before taking a loan."
+            "- Ensure you have a stable repayment plan."
+            "- Avoid over-borrowing to manage debt efficiently."
+        )
     return None
 
 # Gemini AI for Custom Responses
